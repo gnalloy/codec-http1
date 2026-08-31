@@ -1,0 +1,6 @@
+gnalloy.org/codec-compression v0.0.0-20260831155050-e50fc657ce98 h1:Hilym9O+lbWeRljPkltt4qPTVuvpHJ8AnPEnJbxDItw=
+gnalloy.org/codec-compression v0.0.0-20260831155050-e50fc657ce98/go.mod h1:Y5Bk5clhC0i3lilHSjH1bxmc0Ls7fRqSvYf5mV0PXUw=
+gnalloy.org/gnalloy v0.0.0-20260831153720-533bb39b2ad6 h1:YtIsp2u+paX8W0rCuIP71AUtjIC82OAXa0FVF8loNbk=
+gnalloy.org/gnalloy v0.0.0-20260831153720-533bb39b2ad6/go.mod h1:Ahsh3ZG90dkm5gswMrAd+UYKeCXvFwY7pENPtNKJsuA=
+golang.org/x/sys v0.47.0 h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=
+golang.org/x/sys v0.47.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
