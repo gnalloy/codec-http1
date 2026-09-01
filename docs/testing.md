@@ -19,19 +19,70 @@ Run focused tests while working on a small behavior change:
 GOWORK=off GOTOOLCHAIN=local go test ./... -run 'TestName' -count=1
 ```
 
-Current discovered test and benchmark entry points:
+## Discovered Test Entry Points
+
+This inventory is generated from the current `_test.go` files in this repository. It is intentionally complete so documentation review can catch stale test, benchmark, fuzz, and example coverage when code changes.
+
+Total discovered entry points: 50.
+
+### Tests (40)
+- `TestAppendQueryStringEncodesParamsInCallOrder`
+- `TestChunkedBodyEncoderWritesStreamingChunks`
+- `TestContentCompressorCompressesAcceptedResponse`
+- `TestContentDecompressorDecodesGzipResponse`
+- `TestContentEncodingInputStreamsHTTP1GzipBody`
+- `TestContinueHandlerWritesInterimResponseAndPropagatesRequest`
+- `TestDecodeCookieHeaderParsesPairs`
+- `TestDecodeQueryStringEnforcesParamLimit`
+- `TestDecodeQueryStringPreservesOrderAndRepeatedKeys`
+- `TestDecodeRejectsBodyLimits`
+- `TestDecodeRejectsHeaderLimit`
+- `TestDecodeRejectsPartLimit`
+- `TestDecodeRequestUsesHTTPContentType`
+- `TestDecodeSetCookieParsesAttributes`
+- `TestDecodeSetCookieRejectsInvalidSameSite`
+- `TestEncodeCookieHeaderUsesStableOrder`
+- `TestEncoderDecoderRoundTrip`
+- `TestEncodeRejectsInvalidName`
+- `TestEncodeSetCookieWritesAttributes`
+- `TestHTTPObjectAggregatorBuildsFullRequest`
+- `TestHTTPObjectAggregatorBuildsFullResponse`
+- `TestHTTPObjectAggregatorRejectsOversizedSingleLastContent`
+- `TestParseBoundary`
+- `TestQueryStringValuesIsIndependent`
+- `TestRequestDecoderWithBody`
+- `TestRequestDecoderWithChunkedBody`
+- `TestRequestEncoder`
+- `TestRequestObjectDecoderStreamsChunkedContentAndTrailers`
+- `TestRequestObjectDecoderStreamsFixedContent`
+- `TestResponseDecoderWithBody`
+- `TestResponseDecoderWithChunkedBody`
+- `TestResponseEncoder`
+- `TestResponseEncoderCoalescesSmallBodyWhenEnabled`
+- `TestResponseEncoderDoesNotCoalesceLargeBody`
+- `TestResponseEncoderWithChunkedBody`
+- `TestResponseObjectDecoderStreamsChunkedContentAndTrailers`
+- `TestResponseObjectDecoderStreamsFixedContent`
+- `TestStreamDecoderDrainsUnreadPart`
+- `TestUpgradeHelpersBuildClientRequestAndServerResponse`
+- `TestUpgradeHelpersKeepExistingConnectionTokens`
+
+### Benchmarks (6)
 - `BenchmarkFindHeaderEndFragmented`
 - `BenchmarkRequestDecoderChunkedFragmentedBody`
 - `BenchmarkRequestDecoderFragmentedHeader`
 - `BenchmarkRequestEncoderHeader`
 - `BenchmarkResponseEncoderHeader`
 - `BenchmarkStringSliceFragmented`
+
+### Fuzz Targets (4)
 - `FuzzHTTP1ObjectRequestDecoder`
 - `FuzzHTTP1ObjectResponseDecoder`
 - `FuzzHTTP1RequestDecoder`
 - `FuzzHTTP1ResponseDecoder`
-- `TestAppendQueryStringEncodesParamsInCallOrder`
-- `TestChunkedBodyEncoderWritesStreamingChunks`
+
+### Examples (0)
+- No Example functions are currently declared.
 
 ## Race Checks
 

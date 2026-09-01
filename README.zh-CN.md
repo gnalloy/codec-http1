@@ -43,8 +43,9 @@ GOWORK=off GOTOOLCHAIN=local go test ./... -count=1
 - `gnalloy.org/codec-http1/multipart`（`multipart`）
 
 ## Gnalloy 依赖
-- `gnalloy.org/gnalloy`
+
 - `gnalloy.org/codec-compression`
+- `gnalloy.org/gnalloy`
 
 ## 常见集成方式
 - frame、header、body 与 decoded-content 上限必须由服务的可信边界决定。

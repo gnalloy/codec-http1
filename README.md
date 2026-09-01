@@ -43,8 +43,9 @@ It does not absorb neighboring module responsibilities. Core primitives stay in 
 - `gnalloy.org/codec-http1/multipart` (`multipart`)
 
 ## Gnalloy Dependencies
-- `gnalloy.org/gnalloy`
+
 - `gnalloy.org/codec-compression`
+- `gnalloy.org/gnalloy`
 
 ## Common Integration Pattern
 - Frame, header, body, and decoded-content limits must be selected from the trusted boundary of the service.

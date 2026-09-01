@@ -21,10 +21,12 @@ Gnalloy HTTP/1.x 编解码器、对象桥接、Cookie、multipart、内容编码
 - `gnalloy.org/codec-http1/multipart`（`multipart`）
 
 ## 直接 Gnalloy 依赖
-- `gnalloy.org/gnalloy`
-- `gnalloy.org/codec-compression`
 
-## 当前模块规划中的直接下游
+- `gnalloy.org/codec-compression`
+- `gnalloy.org/gnalloy`
+
+## 当前仓库集合中的直接下游
+
 - `gnalloy.org/codec-http2`
 - `gnalloy.org/codec-http3`
 - `gnalloy.org/codec-websocket`

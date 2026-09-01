@@ -21,10 +21,12 @@ This module sits above transports and below application handlers. It translates 
 - `gnalloy.org/codec-http1/multipart` (`multipart`)
 
 ## Direct Gnalloy Dependencies
-- `gnalloy.org/gnalloy`
-- `gnalloy.org/codec-compression`
 
-## Direct Dependents in the Current Module Plan
+- `gnalloy.org/codec-compression`
+- `gnalloy.org/gnalloy`
+
+## Direct Dependents in the Current Repository Set
+
 - `gnalloy.org/codec-http2`
 - `gnalloy.org/codec-http3`
 - `gnalloy.org/codec-websocket`

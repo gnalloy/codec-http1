@@ -19,19 +19,70 @@ git diff --check
 GOWORK=off GOTOOLCHAIN=local go test ./... -run 'TestName' -count=1
 ```
 
-当前发现的测试和 benchmark 入口：
+## 已发现测试入口
+
+本清单从当前仓库的 `_test.go` 文件生成。这里刻意保持完整，用于在代码变化时发现 test、benchmark、fuzz 与 example 覆盖说明是否过期。
+
+已发现入口总数：50。
+
+### Tests（40）
+- `TestAppendQueryStringEncodesParamsInCallOrder`
+- `TestChunkedBodyEncoderWritesStreamingChunks`
+- `TestContentCompressorCompressesAcceptedResponse`
+- `TestContentDecompressorDecodesGzipResponse`
+- `TestContentEncodingInputStreamsHTTP1GzipBody`
+- `TestContinueHandlerWritesInterimResponseAndPropagatesRequest`
+- `TestDecodeCookieHeaderParsesPairs`
+- `TestDecodeQueryStringEnforcesParamLimit`
+- `TestDecodeQueryStringPreservesOrderAndRepeatedKeys`
+- `TestDecodeRejectsBodyLimits`
+- `TestDecodeRejectsHeaderLimit`
+- `TestDecodeRejectsPartLimit`
+- `TestDecodeRequestUsesHTTPContentType`
+- `TestDecodeSetCookieParsesAttributes`
+- `TestDecodeSetCookieRejectsInvalidSameSite`
+- `TestEncodeCookieHeaderUsesStableOrder`
+- `TestEncoderDecoderRoundTrip`
+- `TestEncodeRejectsInvalidName`
+- `TestEncodeSetCookieWritesAttributes`
+- `TestHTTPObjectAggregatorBuildsFullRequest`
+- `TestHTTPObjectAggregatorBuildsFullResponse`
+- `TestHTTPObjectAggregatorRejectsOversizedSingleLastContent`
+- `TestParseBoundary`
+- `TestQueryStringValuesIsIndependent`
+- `TestRequestDecoderWithBody`
+- `TestRequestDecoderWithChunkedBody`
+- `TestRequestEncoder`
+- `TestRequestObjectDecoderStreamsChunkedContentAndTrailers`
+- `TestRequestObjectDecoderStreamsFixedContent`
+- `TestResponseDecoderWithBody`
+- `TestResponseDecoderWithChunkedBody`
+- `TestResponseEncoder`
+- `TestResponseEncoderCoalescesSmallBodyWhenEnabled`
+- `TestResponseEncoderDoesNotCoalesceLargeBody`
+- `TestResponseEncoderWithChunkedBody`
+- `TestResponseObjectDecoderStreamsChunkedContentAndTrailers`
+- `TestResponseObjectDecoderStreamsFixedContent`
+- `TestStreamDecoderDrainsUnreadPart`
+- `TestUpgradeHelpersBuildClientRequestAndServerResponse`
+- `TestUpgradeHelpersKeepExistingConnectionTokens`
+
+### Benchmarks（6）
 - `BenchmarkFindHeaderEndFragmented`
 - `BenchmarkRequestDecoderChunkedFragmentedBody`
 - `BenchmarkRequestDecoderFragmentedHeader`
 - `BenchmarkRequestEncoderHeader`
 - `BenchmarkResponseEncoderHeader`
 - `BenchmarkStringSliceFragmented`
+
+### Fuzz Targets（4）
 - `FuzzHTTP1ObjectRequestDecoder`
 - `FuzzHTTP1ObjectResponseDecoder`
 - `FuzzHTTP1RequestDecoder`
 - `FuzzHTTP1ResponseDecoder`
-- `TestAppendQueryStringEncodesParamsInCallOrder`
-- `TestChunkedBodyEncoderWritesStreamingChunks`
+
+### Examples（0）
+- 当前没有声明 Example 函数。
 
 ## Race 检查
 
