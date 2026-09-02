@@ -9,6 +9,10 @@ import (
 
 // parseRequestHeader 解析完整 HTTP/1 请求头，不为行列表创建临时切片。
 func parseRequestHeader(src string) (Request, error) {
+	return parseRequestHeaderInto(src, nil)
+}
+
+func parseRequestHeaderInto(src string, headers Headers) (Request, error) {
 	line, next, ok := nextHeaderLine(src, 0)
 	if !ok {
 		return Request{}, codec.ErrInvalidFrameLength
@@ -17,7 +21,7 @@ func parseRequestHeader(src string) (Request, error) {
 	if !ok {
 		return Request{}, codec.ErrInvalidFrameLength
 	}
-	headers, err := parseHeaderFields(src, next)
+	headers, err := parseHeaderFieldsInto(src, next, headers)
 	if err != nil {
 		return Request{}, err
 	}
@@ -26,6 +30,10 @@ func parseRequestHeader(src string) (Request, error) {
 
 // parseResponseHeader 解析完整 HTTP/1 响应头，不为行列表创建临时切片。
 func parseResponseHeader(src string) (Response, error) {
+	return parseResponseHeaderInto(src, nil)
+}
+
+func parseResponseHeaderInto(src string, headers Headers) (Response, error) {
 	line, next, ok := nextHeaderLine(src, 0)
 	if !ok {
 		return Response{}, codec.ErrInvalidFrameLength
@@ -38,7 +46,7 @@ func parseResponseHeader(src string) (Response, error) {
 	if err != nil {
 		return Response{}, codec.ErrInvalidFrameLength
 	}
-	headers, err := parseHeaderFields(src, next)
+	headers, err = parseHeaderFieldsInto(src, next, headers)
 	if err != nil {
 		return Response{}, err
 	}
@@ -97,7 +105,13 @@ func splitResponseLine(line string) (string, string, string, bool) {
 }
 
 func parseHeaderFields(src string, start int) (Headers, error) {
-	headers := make(Headers, 4)
+	return parseHeaderFieldsInto(src, start, nil)
+}
+
+func parseHeaderFieldsInto(src string, start int, headers Headers) (Headers, error) {
+	if headers == nil {
+		headers = make(Headers, 4)
+	}
 	for start < len(src) {
 		line, next, ok := nextHeaderLine(src, start)
 		if !ok {

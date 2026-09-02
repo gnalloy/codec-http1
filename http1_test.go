@@ -44,9 +44,39 @@ func TestRequestDecoderWithBody(t *testing.T) {
 		t.Fatalf("reqs=%d, want 1", len(collector.reqs))
 	}
 	req := collector.reqs[0]
-	defer req.Body.Release()
+	defer req.Release()
 	if req.Method != "POST" || req.URI != "/x" || string(req.Body.Bytes()) != "hello" {
 		t.Fatalf("req=%+v body=%q", req, req.Body.Bytes())
+	}
+}
+
+func TestDecodedRequestReleaseRecyclesHeaders(t *testing.T) {
+	decoder, err := NewRequestDecoder(1024, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector := &requestCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte("GET / HTTP/1.1\r\nHost: example.test\r\n\r\n")))
+	if len(collector.reqs) != 1 {
+		t.Fatalf("reqs=%d, want 1", len(collector.reqs))
+	}
+	req := collector.reqs[0]
+	decodedHeaders := req.Headers
+	req.Release()
+	if len(decodedHeaders) != 0 {
+		t.Fatalf("decoded headers retained after release: %+v", decodedHeaders)
+	}
+}
+
+func TestRequestReleaseDoesNotRecycleCallerHeaders(t *testing.T) {
+	headers := Headers{"Host": "example.test"}
+	Request{Headers: headers}.Release()
+	if got := headers.Get("Host"); got != "example.test" {
+		t.Fatalf("host=%q, want caller-owned header", got)
 	}
 }
 
@@ -69,6 +99,28 @@ func TestResponseDecoderWithBody(t *testing.T) {
 	defer resp.Release()
 	if resp.StatusCode != 200 || resp.Reason != "OK" || string(resp.Body.Bytes()) != "hello" {
 		t.Fatalf("resp=%+v body=%q", resp, resp.Body.Bytes())
+	}
+}
+
+func TestDecodedResponseReleaseRecyclesHeaders(t *testing.T) {
+	decoder, err := NewResponseDecoder(1024, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collector := &responseCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	ch.Pipeline().FireChannelRead(testBuf([]byte("HTTP/1.1 204 No Content\r\nServer: gnalloy\r\n\r\n")))
+	if len(collector.resps) != 1 {
+		t.Fatalf("resps=%d, want 1", len(collector.resps))
+	}
+	resp := collector.resps[0]
+	decodedHeaders := resp.Headers
+	resp.Release()
+	if len(decodedHeaders) != 0 {
+		t.Fatalf("decoded headers retained after release: %+v", decodedHeaders)
 	}
 }
 

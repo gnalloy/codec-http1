@@ -58,6 +58,8 @@ type Request struct {
 	Version string
 	Headers Headers
 	Body    buffer.ByteBuf
+
+	recycleHeaders bool
 }
 
 func (r Request) KeepAlive() bool {
@@ -78,6 +80,9 @@ func (r Request) Release() {
 	if r.Body != nil {
 		r.Body.Release()
 	}
+	if r.recycleHeaders {
+		releaseDecodedHeaders(r.Headers)
+	}
 }
 
 type Response struct {
@@ -86,6 +91,8 @@ type Response struct {
 	Reason     string
 	Headers    Headers
 	Body       buffer.ByteBuf
+
+	recycleHeaders bool
 }
 
 func (r Response) KeepAlive() bool {
@@ -101,6 +108,9 @@ func (r Response) KeepAlive() bool {
 func (r Response) Release() {
 	if r.Body != nil {
 		r.Body.Release()
+	}
+	if r.recycleHeaders {
+		releaseDecodedHeaders(r.Headers)
 	}
 }
 
@@ -136,14 +146,18 @@ func (d *RequestDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composit
 	if err != nil {
 		return nil, err
 	}
-	req, err := parseRequestHeader(header)
+	headers := acquireDecodedHeaders()
+	req, err := parseRequestHeaderInto(header, headers)
 	if err != nil {
+		releaseDecodedHeaders(headers)
 		return nil, err
 	}
+	req.recycleHeaders = true
 	bodyLength := contentLength(req.Headers)
 	if req.Headers.ContainsToken("Transfer-Encoding", "chunked") {
 		body, total, ok, err := d.decodeChunkedBody(ctx, in, reader+headerBytes)
 		if err != nil || !ok {
+			req.Release()
 			return nil, err
 		}
 		req.Body = body
@@ -156,15 +170,18 @@ func (d *RequestDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composit
 		return req, nil
 	}
 	if bodyLength < 0 || bodyLength > d.maxBodyBytes {
+		req.Release()
 		return nil, codec.ErrFrameTooLong
 	}
 	total := headerBytes + bodyLength
 	if in.ReadableBytes() < total {
+		req.Release()
 		return nil, nil
 	}
 	if bodyLength > 0 {
 		req.Body, err = in.Slice(reader+headerBytes, bodyLength)
 		if err != nil {
+			req.Release()
 			return nil, err
 		}
 	}
@@ -209,14 +226,18 @@ func (d *ResponseDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composi
 	if err != nil {
 		return nil, err
 	}
-	resp, err := parseResponseHeader(header)
+	headers := acquireDecodedHeaders()
+	resp, err := parseResponseHeaderInto(header, headers)
 	if err != nil {
+		releaseDecodedHeaders(headers)
 		return nil, err
 	}
+	resp.recycleHeaders = true
 	bodyLength := contentLength(resp.Headers)
 	if resp.Headers.ContainsToken("Transfer-Encoding", "chunked") {
 		body, total, ok, err := d.decodeChunkedBody(ctx, in, reader+headerBytes)
 		if err != nil || !ok {
+			resp.Release()
 			return nil, err
 		}
 		resp.Body = body
@@ -229,15 +250,18 @@ func (d *ResponseDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composi
 		return resp, nil
 	}
 	if bodyLength < 0 || bodyLength > d.maxBodyBytes {
+		resp.Release()
 		return nil, codec.ErrFrameTooLong
 	}
 	total := headerBytes + bodyLength
 	if in.ReadableBytes() < total {
+		resp.Release()
 		return nil, nil
 	}
 	if bodyLength > 0 {
 		resp.Body, err = in.Slice(reader+headerBytes, bodyLength)
 		if err != nil {
+			resp.Release()
 			return nil, err
 		}
 	}

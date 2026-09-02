@@ -58,6 +58,7 @@ func BenchmarkRequestDecoderFragmentedHeader(b *testing.B) {
 		if len(collector.reqs) != 1 {
 			b.Fatalf("reqs=%d", len(collector.reqs))
 		}
+		collector.reqs[0].Release()
 		collector.reqs = collector.reqs[:0]
 	}
 }
