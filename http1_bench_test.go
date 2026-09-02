@@ -40,6 +40,29 @@ func BenchmarkStringSliceFragmented(b *testing.B) {
 	}
 }
 
+func BenchmarkRequestDecoderContiguousHeader(b *testing.B) {
+	decoder, err := NewRequestDecoder(1024, 1024)
+	if err != nil {
+		b.Fatal(err)
+	}
+	collector := &requestCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("collector", collector)
+	request := []byte("GET /bench HTTP/1.1\r\nHost: example.test\r\nContent-Length: 0\r\n\r\n")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ch.Pipeline().FireChannelRead(testBuf(request))
+		if len(collector.reqs) != 1 {
+			b.Fatalf("reqs=%d", len(collector.reqs))
+		}
+		collector.reqs[0].Release()
+		collector.reqs = collector.reqs[:0]
+	}
+}
+
 func BenchmarkRequestDecoderFragmentedHeader(b *testing.B) {
 	decoder, err := NewRequestDecoder(1024, 1024)
 	if err != nil {

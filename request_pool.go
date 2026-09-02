@@ -17,23 +17,20 @@ func acquireDecodedRequest(request Request) *Request {
 	return decoded
 }
 
-func recycleDecodedRequest(request *Request) {
-	if request == nil {
-		return
-	}
-	pooled := request.pooled
-	*request = Request{}
-	if pooled {
-		decodedRequestPool.Put(request)
-	}
-}
-
 func releaseDecodedRequestEnvelope(request *Request) {
 	if request == nil || !request.pooled {
 		return
 	}
+	owner := request.headerOwner
 	if request.recycleHeaders {
 		releaseDecodedHeaders(request.Headers)
 	}
-	recycleDecodedRequest(request)
+	pooled := request.pooled
+	*request = Request{}
+	if owner != nil {
+		owner.Release()
+	}
+	if pooled {
+		decodedRequestPool.Put(request)
+	}
 }

@@ -80,6 +80,126 @@ func TestDecodedRequestReleaseRecyclesHeaders(t *testing.T) {
 	}
 }
 
+func TestRequestDecoderRetainsContiguousHeaderUntilRelease(t *testing.T) {
+	decoder, err := NewRequestDecoder(1024, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := testBuf([]byte("GET /retained HTTP/1.1\r\nHost: example.test\r\n\r\n"))
+	in := buffer.NewCompositeByteBuf()
+	in.Append(source)
+
+	message, err := decoder.Decode(nil, in)
+	if err != nil {
+		in.Release()
+		t.Fatal(err)
+	}
+	req, ok := message.(*Request)
+	if !ok {
+		in.Release()
+		t.Fatalf("message=%T, want *Request", message)
+	}
+	in.DiscardReadComponents()
+	if got := source.RefCnt(); got != 1 {
+		req.Release()
+		in.Release()
+		t.Fatalf("source refCnt=%d, want 1 while request owns header", got)
+	}
+	if req.Method != "GET" || req.URI != "/retained" || req.Headers.Get("Host") != "example.test" {
+		req.Release()
+		in.Release()
+		t.Fatalf("request lost retained header data: %+v", req)
+	}
+
+	req.Release()
+	if got := source.RefCnt(); got != 0 {
+		in.Release()
+		t.Fatalf("source refCnt=%d, want 0 after request release", got)
+	}
+	in.Release()
+}
+
+func TestRequestDecoderRetainsHeaderAndBodyIndependently(t *testing.T) {
+	decoder, err := NewRequestDecoder(1024, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := testBuf([]byte("POST /retained HTTP/1.1\r\nContent-Length: 2\r\n\r\nok"))
+	in := buffer.NewCompositeByteBuf()
+	in.Append(source)
+
+	message, err := decoder.Decode(nil, in)
+	if err != nil {
+		in.Release()
+		t.Fatal(err)
+	}
+	req, ok := message.(*Request)
+	if !ok {
+		in.Release()
+		t.Fatalf("message=%T, want *Request", message)
+	}
+	in.DiscardReadComponents()
+	if got := source.RefCnt(); got != 2 {
+		req.Release()
+		in.Release()
+		t.Fatalf("source refCnt=%d, want 2 for retained header and body", got)
+	}
+	if req.URI != "/retained" || string(req.Body.Bytes()) != "ok" {
+		req.Release()
+		in.Release()
+		t.Fatalf("request lost retained data: %+v", req)
+	}
+
+	req.Release()
+	if got := source.RefCnt(); got != 0 {
+		in.Release()
+		t.Fatalf("source refCnt=%d, want 0 after request release", got)
+	}
+	in.Release()
+}
+
+func TestRequestDecoderCopiesFragmentedHeader(t *testing.T) {
+	decoder, err := NewRequestDecoder(1024, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := testBuf([]byte("GET /fragmented HTTP/1.1\r\n"))
+	second := testBuf([]byte("Host: example.test\r\n\r\n"))
+	in := buffer.NewCompositeByteBuf()
+	in.Append(first)
+	in.Append(second)
+
+	message, err := decoder.Decode(nil, in)
+	if err != nil {
+		in.Release()
+		t.Fatal(err)
+	}
+	req, ok := message.(*Request)
+	if !ok {
+		in.Release()
+		t.Fatalf("message=%T, want *Request", message)
+	}
+	in.DiscardReadComponents()
+	if got := first.RefCnt(); got != 0 {
+		req.Release()
+		in.Release()
+		t.Fatalf("first source refCnt=%d, want copied fragmented header", got)
+	}
+	if got := second.RefCnt(); got != 0 {
+		req.Release()
+		in.Release()
+		t.Fatalf("second source refCnt=%d, want copied fragmented header", got)
+	}
+	if req.URI != "/fragmented" || req.Headers.Get("Host") != "example.test" {
+		req.Release()
+		in.Release()
+		t.Fatalf("request lost copied header data: %+v", req)
+	}
+
+	req.Release()
+	in.Release()
+}
+
 func TestRequestReleaseDoesNotRecycleCallerHeaders(t *testing.T) {
 	headers := Headers{"Host": "example.test"}
 	request := Request{Headers: headers}
