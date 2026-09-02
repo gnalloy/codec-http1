@@ -173,6 +173,28 @@ func BenchmarkResponseEncoderHeader(b *testing.B) {
 	}
 }
 
+func BenchmarkResponseEncoderCoalescedBody(b *testing.B) {
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), releasingHTTP1Sink{})
+	encoder := NewResponseEncoderWithOptions(ResponseEncoderOptions{CoalesceBodyBytes: 16 * 1024})
+	_ = ch.Pipeline().AddLast("encoder", encoder)
+	body := make([]byte, 128)
+	resp := Response{
+		StatusCode: 200,
+		Headers: Headers{
+			"Content-Type": "application/octet-stream",
+		},
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		resp.Body = buffer.NewSharedBuffer(body)
+		if err := ch.Write(resp); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func fragmentedHTTP1Buffer(parts ...string) *buffer.CompositeByteBuf {
 	c := buffer.NewCompositeByteBuf()
 	for _, part := range parts {

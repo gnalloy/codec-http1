@@ -31,11 +31,12 @@ func encodeRequestHead(ctx *channel.HandlerContext, req Request, chunked bool) (
 	if version == "" {
 		version = "HTTP/1.1"
 	}
+	headerBytes, hasContentLength := headerFieldsMeta(req.Headers, "Content-Length")
 	contentLength := -1
-	if req.Body != nil && !chunked && !hasHeader(req.Headers, "Content-Length") {
+	if req.Body != nil && !chunked && !hasContentLength {
 		contentLength = req.Body.ReadableBytes()
 	}
-	size := requestHeadSize(method, uri, version, req.Headers, contentLength)
+	size := requestHeadSize(method, uri, version, headerBytes, contentLength)
 	out, err := ctx.Channel().Allocator().Acquire(size)
 	if err != nil {
 		return nil, err
@@ -86,11 +87,12 @@ func responseHeadFields(resp Response, chunked bool) (string, string, int, int) 
 	if reason == "" {
 		reason = defaultReason(resp.StatusCode)
 	}
+	headerBytes, hasContentLength := headerFieldsMeta(resp.Headers, "Content-Length")
 	contentLength := -1
-	if resp.Body != nil && !chunked && !hasHeader(resp.Headers, "Content-Length") {
+	if resp.Body != nil && !chunked && !hasContentLength {
 		contentLength = resp.Body.ReadableBytes()
 	}
-	size := responseHeadSize(version, resp.StatusCode, reason, resp.Headers, contentLength)
+	size := responseHeadSize(version, resp.StatusCode, reason, headerBytes, contentLength)
 	return version, reason, contentLength, size
 }
 
@@ -130,22 +132,26 @@ func appendResponseHead(out buffer.ByteBuf, version string, statusCode int, reas
 	return out.AdvanceWriter(len(dst))
 }
 
-func requestHeadSize(method string, uri string, version string, headers Headers, contentLength int) int {
+func requestHeadSize(method string, uri string, version string, headerBytes int, contentLength int) int {
 	return len(method) + 1 + len(uri) + 1 + len(version) + 2 +
-		headersSize(headers) + contentLengthSize(contentLength) + 2
+		headerBytes + contentLengthSize(contentLength) + 2
 }
 
-func responseHeadSize(version string, statusCode int, reason string, headers Headers, contentLength int) int {
+func responseHeadSize(version string, statusCode int, reason string, headerBytes int, contentLength int) int {
 	return len(version) + 1 + intTextLen(statusCode) + 1 + len(reason) + 2 +
-		headersSize(headers) + contentLengthSize(contentLength) + 2
+		headerBytes + contentLengthSize(contentLength) + 2
 }
 
-func headersSize(headers Headers) int {
+func headerFieldsMeta(headers Headers, name string) (int, bool) {
 	size := 0
+	found := false
 	for k, v := range headers {
 		size += len(k) + 2 + len(v) + 2
+		if !found && strings.EqualFold(k, name) {
+			found = true
+		}
 	}
-	return size
+	return size, found
 }
 
 func contentLengthSize(contentLength int) int {
@@ -176,15 +182,6 @@ func appendContentLength(dst []byte, contentLength int) []byte {
 
 func appendCRLF(dst []byte) []byte {
 	return append(dst, '\r', '\n')
-}
-
-func hasHeader(headers Headers, name string) bool {
-	for key := range headers {
-		if strings.EqualFold(key, name) {
-			return true
-		}
-	}
-	return false
 }
 
 func intTextLen(n int) int {
