@@ -44,6 +44,10 @@ func (h Headers) Del(name string) {
 
 func (h Headers) ContainsToken(name string, token string) bool {
 	value := h.Get(name)
+	return containsHeaderToken(value, token)
+}
+
+func containsHeaderToken(value string, token string) bool {
 	for part := range strings.SplitSeq(value, ",") {
 		if strings.EqualFold(strings.TrimSpace(part), token) {
 			return true
@@ -171,7 +175,7 @@ func (d *RequestDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composit
 		return nil, err
 	}
 	headers := acquireDecodedHeaders()
-	parsed, err := parseRequestHeaderInto(header, headers)
+	parsed, framing, err := parseRequestHeaderWithFramingInto(header, headers)
 	if err != nil {
 		releaseDecodedHeaders(headers)
 		if headerOwner != nil {
@@ -182,8 +186,8 @@ func (d *RequestDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composit
 	req := acquireDecodedRequest(parsed)
 	req.headerOwner = headerOwner
 	req.recycleHeaders = true
-	bodyLength := contentLength(req.Headers)
-	if req.Headers.ContainsToken("Transfer-Encoding", "chunked") {
+	bodyLength := framing.contentLength
+	if framing.chunked {
 		body, total, ok, err := d.decodeChunkedBody(ctx, in, reader+headerBytes)
 		if err != nil || !ok {
 			req.Release()
@@ -254,7 +258,7 @@ func (d *ResponseDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composi
 		return nil, err
 	}
 	headers := acquireDecodedHeaders()
-	parsed, err := parseResponseHeaderInto(header, headers)
+	parsed, framing, err := parseResponseHeaderWithFramingInto(header, headers)
 	if err != nil {
 		releaseDecodedHeaders(headers)
 		if headerOwner != nil {
@@ -265,8 +269,8 @@ func (d *ResponseDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composi
 	resp := acquireDecodedResponse(parsed)
 	resp.headerOwner = headerOwner
 	resp.recycleHeaders = true
-	bodyLength := contentLength(resp.Headers)
-	if resp.Headers.ContainsToken("Transfer-Encoding", "chunked") {
+	bodyLength := framing.contentLength
+	if framing.chunked {
 		body, total, ok, err := d.decodeChunkedBody(ctx, in, reader+headerBytes)
 		if err != nil || !ok {
 			resp.Release()

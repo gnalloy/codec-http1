@@ -179,8 +179,8 @@ func appendCRLF(dst []byte) []byte {
 }
 
 func hasHeader(headers Headers, name string) bool {
-	for k := range headers {
-		if strings.EqualFold(k, name) {
+	for key := range headers {
+		if strings.EqualFold(key, name) {
 			return true
 		}
 	}

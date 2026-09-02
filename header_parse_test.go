@@ -2,6 +2,22 @@ package http1
 
 import "testing"
 
+func TestParseRequestHeaderWithFramingInto(t *testing.T) {
+	req, framing, err := parseRequestHeaderWithFramingInto(
+		"POST /upload HTTP/1.1\r\ncontent-length: 3\r\ntransfer-encoding: gzip, CHUNKED\r\n\r\n",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Method != "POST" || req.URI != "/upload" || req.Version != "HTTP/1.1" {
+		t.Fatalf("request=%+v", req)
+	}
+	if framing.contentLength != 3 || !framing.chunked {
+		t.Fatalf("framing=%+v, want content length 3 and chunked", framing)
+	}
+}
+
 func TestContentLengthSupportsCanonicalAndCaseInsensitiveNames(t *testing.T) {
 	tests := []struct {
 		name    string
