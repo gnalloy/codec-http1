@@ -86,6 +86,29 @@ func BenchmarkRequestDecoderFragmentedHeader(b *testing.B) {
 	}
 }
 
+func BenchmarkResponseDecoderContiguousHeader(b *testing.B) {
+	decoder, err := NewResponseDecoder(1024, 1024)
+	if err != nil {
+		b.Fatal(err)
+	}
+	collector := &responseCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decoder", decoder)
+	_ = ch.Pipeline().AddLast("collector", collector)
+	response := []byte("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: 2\r\n\r\nok")
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		ch.Pipeline().FireChannelRead(testBuf(response))
+		if len(collector.resps) != 1 {
+			b.Fatalf("resps=%d", len(collector.resps))
+		}
+		collector.resps[0].Release()
+		collector.resps = collector.resps[:0]
+	}
+}
+
 func BenchmarkRequestDecoderChunkedFragmentedBody(b *testing.B) {
 	decoder, err := NewRequestDecoder(1024, 1024)
 	if err != nil {

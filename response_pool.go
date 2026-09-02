@@ -30,9 +30,13 @@ func releaseDecodedResponseEnvelope(response *Response) {
 	if response == nil || !response.pooled {
 		return
 	}
+	owner := response.headerOwner
 	if response.recycleHeaders {
 		releaseDecodedHeaders(response.Headers)
 	}
 	*response = Response{}
+	if owner != nil {
+		owner.Release()
+	}
 	decodedResponsePool.Put(response)
 }

@@ -105,6 +105,7 @@ type Response struct {
 	Headers    Headers
 	Body       buffer.ByteBuf
 
+	headerOwner    buffer.ByteBuf
 	recycleHeaders bool
 	pooled         bool
 }
@@ -248,7 +249,7 @@ func (d *ResponseDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composi
 	if headerBytes > d.maxHeaderBytes {
 		return nil, codec.ErrFrameTooLong
 	}
-	header, err := stringSlice(in, reader, headerBytes)
+	header, headerOwner, err := retainedHeaderString(in, reader, headerBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -256,9 +257,13 @@ func (d *ResponseDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composi
 	parsed, err := parseResponseHeaderInto(header, headers)
 	if err != nil {
 		releaseDecodedHeaders(headers)
+		if headerOwner != nil {
+			headerOwner.Release()
+		}
 		return nil, err
 	}
 	resp := acquireDecodedResponse(parsed)
+	resp.headerOwner = headerOwner
 	resp.recycleHeaders = true
 	bodyLength := contentLength(resp.Headers)
 	if resp.Headers.ContainsToken("Transfer-Encoding", "chunked") {
@@ -293,9 +298,7 @@ func (d *ResponseDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composi
 		}
 	}
 	if err := in.SkipBytes(total); err != nil {
-		if resp.Body != nil {
-			resp.Body.Release()
-		}
+		resp.Release()
 		return nil, err
 	}
 	return resp, nil
