@@ -442,7 +442,6 @@ func (e *RequestEncoder) write(ctx *channel.HandlerContext, msg any, flush bool)
 		return writeHTTP1Buffer(ctx, out, flush)
 	}
 	if err := ctx.Write(out); err != nil {
-		out.Release()
 		req.Body.Release()
 		return err
 	}
@@ -540,7 +539,6 @@ func (e *ResponseEncoder) writeSplit(ctx *channel.HandlerContext, resp Response,
 		return writeHTTP1Buffer(ctx, out, flush)
 	}
 	if err := ctx.Write(out); err != nil {
-		out.Release()
 		resp.Body.Release()
 		return err
 	}
@@ -651,13 +649,11 @@ func writeChunkedData(ctx *channel.HandlerContext, body buffer.ByteBuf, flush bo
 		return err
 	}
 	if err := ctx.Write(head); err != nil {
-		head.Release()
 		tail.Release()
 		body.Release()
 		return err
 	}
 	if err := ctx.Write(body); err != nil {
-		body.Release()
 		tail.Release()
 		return err
 	}
