@@ -19,7 +19,9 @@ func TestContentCompressorCompressesAcceptedResponse(t *testing.T) {
 	_ = ch.Pipeline().AddLast("compressor", NewContentCompressor(1, ContentCodingGzip))
 	defer sink.release()
 
-	ch.Pipeline().FireChannelRead(Request{Headers: Headers{"Accept-Encoding": "br, gzip;q=0.8"}})
+	req := acquireDecodedRequest(Request{Headers: Headers{"Accept-Encoding": "br, gzip;q=0.8"}})
+	ch.Pipeline().FireChannelRead(req)
+	req.Release()
 	if err := ch.Write(Response{
 		StatusCode: 200,
 		Headers:    Headers{"Server": "gnalloy"},
@@ -37,6 +39,37 @@ func TestContentCompressorCompressesAcceptedResponse(t *testing.T) {
 	}
 	if got := gunzipTestBytes(t, sink.writes[1].Bytes()); got != strings.Repeat("hello", 8) {
 		t.Fatalf("body=%q", got)
+	}
+}
+
+func TestContentDecompressorDecodesGzipPooledRequest(t *testing.T) {
+	plain := []byte("hello compressed request")
+	compressed := gzipTestBytes(t, plain)
+	collector := &requestCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), nil)
+	_ = ch.Pipeline().AddLast("decompressor", NewContentDecompressor(1024))
+	_ = ch.Pipeline().AddLast("collector", collector)
+
+	req := acquireDecodedRequest(Request{
+		Method: "POST",
+		URI:    "/upload",
+		Headers: Headers{
+			"Content-Encoding": "gzip",
+			"Content-Length":   strconv.Itoa(len(compressed)),
+		},
+		Body: testBuf(compressed),
+	})
+	ch.Pipeline().FireChannelRead(req)
+
+	if len(collector.reqs) != 1 || collector.reqs[0] != req {
+		t.Fatalf("requests=%d propagated=%v, want pooled request", len(collector.reqs), len(collector.reqs) == 1 && collector.reqs[0] == req)
+	}
+	defer req.Release()
+	if req.Headers.Get("Content-Encoding") != "" || req.Headers.Get("Content-Length") != strconv.Itoa(len(plain)) {
+		t.Fatalf("headers=%+v", req.Headers)
+	}
+	if string(req.Body.Bytes()) != string(plain) {
+		t.Fatalf("body=%q", req.Body.Bytes())
 	}
 }
 

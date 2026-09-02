@@ -20,8 +20,13 @@ func NewContentCompressor(minBytes int, codings ...ContentCoding) *ContentCompre
 }
 
 func (h *ContentCompressor) ChannelRead(ctx *channel.HandlerContext, msg any) {
-	if req, ok := msg.(Request); ok {
+	switch req := msg.(type) {
+	case Request:
 		h.accepted = chooseContentCoding(req.Headers.Get("Accept-Encoding"), h.codings)
+	case *Request:
+		if req != nil {
+			h.accepted = chooseContentCoding(req.Headers.Get("Accept-Encoding"), h.codings)
+		}
 	}
 	ctx.FireChannelRead(msg)
 }

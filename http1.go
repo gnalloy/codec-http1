@@ -52,6 +52,9 @@ func (h Headers) ContainsToken(name string, token string) bool {
 	return false
 }
 
+// Request 表示完整 HTTP/1 请求。
+//
+// RequestDecoder 产出池化指针；下游处理完成后必须调用 Release 一次，且之后不得继续访问。
 type Request struct {
 	Method  string
 	URI     string
@@ -60,6 +63,7 @@ type Request struct {
 	Body    buffer.ByteBuf
 
 	recycleHeaders bool
+	pooled         bool
 }
 
 func (r Request) KeepAlive() bool {
@@ -76,9 +80,17 @@ func (r Request) ExpectsContinue() bool {
 	return r.Headers.ContainsToken("Expect", "100-continue")
 }
 
-func (r Request) Release() {
+// Release 释放正文、回收解码头和池化请求对象。
+func (r *Request) Release() {
+	if r == nil {
+		return
+	}
 	if r.Body != nil {
 		r.Body.Release()
+	}
+	if r.pooled {
+		releaseDecodedRequestEnvelope(r)
+		return
 	}
 	if r.recycleHeaders {
 		releaseDecodedHeaders(r.Headers)
@@ -120,6 +132,7 @@ type RequestDecoder struct {
 	maxBodyBytes   int
 }
 
+// NewRequestDecoder 创建产出 *Request 的流式请求解码器。
 func NewRequestDecoder(maxHeaderBytes int, maxBodyBytes int) (*RequestDecoder, error) {
 	if maxHeaderBytes <= 0 || maxBodyBytes < 0 {
 		return nil, codec.ErrInvalidFrameLength
@@ -147,11 +160,12 @@ func (d *RequestDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composit
 		return nil, err
 	}
 	headers := acquireDecodedHeaders()
-	req, err := parseRequestHeaderInto(header, headers)
+	parsed, err := parseRequestHeaderInto(header, headers)
 	if err != nil {
 		releaseDecodedHeaders(headers)
 		return nil, err
 	}
+	req := acquireDecodedRequest(parsed)
 	req.recycleHeaders = true
 	bodyLength := contentLength(req.Headers)
 	if req.Headers.ContainsToken("Transfer-Encoding", "chunked") {
@@ -369,9 +383,24 @@ func NewRequestEncoder() *RequestEncoder {
 }
 
 func (e *RequestEncoder) Write(ctx *channel.HandlerContext, msg any) error {
-	req, ok := msg.(Request)
-	if !ok {
+	var req Request
+	var pooled *Request
+	switch value := msg.(type) {
+	case Request:
+		req = value
+	case *Request:
+		if value == nil {
+			return ctx.Write(msg)
+		}
+		req = *value
+		if value.pooled {
+			pooled = value
+		}
+	default:
 		return ctx.Write(msg)
+	}
+	if pooled != nil {
+		defer releaseDecodedRequestEnvelope(pooled)
 	}
 	chunked := requestChunked(req)
 	out, err := encodeRequestHead(ctx, req, chunked)
@@ -484,8 +513,14 @@ func NewContinueHandler() *ContinueHandler {
 }
 
 func (h *ContinueHandler) ChannelRead(ctx *channel.HandlerContext, msg any) {
-	req, ok := msg.(Request)
-	if ok && req.ExpectsContinue() {
+	var req *Request
+	switch value := msg.(type) {
+	case Request:
+		req = &value
+	case *Request:
+		req = value
+	}
+	if req != nil && req.ExpectsContinue() {
 		if err := ctx.Channel().WriteAndFlush(Response{StatusCode: 100}); err != nil {
 			req.Release()
 			ctx.FireExceptionCaught(err)

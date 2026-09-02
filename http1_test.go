@@ -9,12 +9,16 @@ import (
 )
 
 type requestCollector struct {
-	reqs []Request
+	reqs []*Request
 }
 
 func (c *requestCollector) ChannelRead(_ *channel.HandlerContext, msg any) {
-	if req, ok := msg.(Request); ok {
+	switch req := msg.(type) {
+	case *Request:
 		c.reqs = append(c.reqs, req)
+	case Request:
+		copy := req
+		c.reqs = append(c.reqs, &copy)
 	}
 }
 
@@ -74,7 +78,8 @@ func TestDecodedRequestReleaseRecyclesHeaders(t *testing.T) {
 
 func TestRequestReleaseDoesNotRecycleCallerHeaders(t *testing.T) {
 	headers := Headers{"Host": "example.test"}
-	Request{Headers: headers}.Release()
+	request := Request{Headers: headers}
+	request.Release()
 	if got := headers.Get("Host"); got != "example.test" {
 		t.Fatalf("host=%q, want caller-owned header", got)
 	}
@@ -328,6 +333,26 @@ func TestContinueHandlerWritesInterimResponseAndPropagatesRequest(t *testing.T) 
 	}
 	if got := string(sink.writes[0].Bytes()); got != "HTTP/1.1 100 Continue\r\n\r\n" {
 		t.Fatalf("continue response=%q", got)
+	}
+}
+
+func TestContinueHandlerPropagatesPooledRequest(t *testing.T) {
+	sink := &outboundSink{}
+	collector := &requestCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", NewResponseEncoder())
+	_ = ch.Pipeline().AddLast("continue", NewContinueHandler())
+	_ = ch.Pipeline().AddLast("collector", collector)
+	defer sink.release()
+
+	req := acquireDecodedRequest(Request{Method: "POST", URI: "/upload", Version: "HTTP/1.1", Headers: Headers{"Expect": "100-continue"}})
+	ch.Pipeline().FireChannelRead(req)
+	if len(collector.reqs) != 1 || collector.reqs[0] != req {
+		t.Fatalf("requests=%d propagated=%v, want pooled request", len(collector.reqs), len(collector.reqs) == 1 && collector.reqs[0] == req)
+	}
+	req.Release()
+	if len(sink.writes) != 1 {
+		t.Fatalf("writes=%d, want 1", len(sink.writes))
 	}
 }
 

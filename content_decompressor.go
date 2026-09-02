@@ -27,6 +27,19 @@ func (h *ContentDecompressor) ChannelRead(ctx *channel.HandlerContext, msg any) 
 			return
 		}
 		ctx.FireChannelRead(req)
+	case *Request:
+		if v == nil {
+			ctx.FireChannelRead(msg)
+			return
+		}
+		req, err := h.decompressRequest(ctx, *v)
+		if err != nil {
+			v.Release()
+			ctx.FireExceptionCaught(err)
+			return
+		}
+		*v = req
+		ctx.FireChannelRead(v)
 	case Response:
 		resp, err := h.decompressResponse(ctx, v)
 		if err != nil {
