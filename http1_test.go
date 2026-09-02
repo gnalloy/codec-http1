@@ -361,6 +361,56 @@ func TestResponseEncoderDoesNotCoalesceLargeBody(t *testing.T) {
 	}
 }
 
+func TestResponseEncoderWriteAndFlushUsesCombinedFinalBuffer(t *testing.T) {
+	tests := []struct {
+		name    string
+		encoder *ResponseEncoder
+		resp    Response
+		writes  int
+	}{
+		{name: "header only", encoder: NewResponseEncoder(), resp: Response{StatusCode: 200}, writes: 1},
+		{name: "split body", encoder: NewResponseEncoder(), resp: Response{StatusCode: 200, Body: testBuf([]byte("ok"))}, writes: 2},
+		{name: "coalesced body", encoder: NewResponseEncoderWithOptions(ResponseEncoderOptions{CoalesceBodyBytes: 16}), resp: Response{StatusCode: 200, Body: testBuf([]byte("ok"))}, writes: 1},
+		{name: "chunked body", encoder: NewResponseEncoder(), resp: Response{StatusCode: 200, Headers: Headers{"Transfer-Encoding": "chunked"}, Body: testBuf([]byte("ok"))}, writes: 5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sink := &outboundSink{}
+			ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+			if err := ch.Pipeline().AddLast("encoder", tt.encoder); err != nil {
+				t.Fatal(err)
+			}
+			defer sink.release()
+
+			if err := ch.WriteAndFlush(tt.resp); err != nil {
+				t.Fatal(err)
+			}
+			if len(sink.writes) != tt.writes {
+				t.Fatalf("writes=%d, want %d", len(sink.writes), tt.writes)
+			}
+			if sink.combinedWrites != 1 || sink.flushes != 0 {
+				t.Fatalf("combined writes=%d split flushes=%d, want 1/0", sink.combinedWrites, sink.flushes)
+			}
+		})
+	}
+}
+
+func TestRequestEncoderWriteAndFlushUsesCombinedFinalBuffer(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("encoder", NewRequestEncoder()); err != nil {
+		t.Fatal(err)
+	}
+	defer sink.release()
+
+	if err := ch.WriteAndFlush(Request{Method: "POST", URI: "/", Body: testBuf([]byte("ok"))}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 2 || sink.combinedWrites != 1 || sink.flushes != 0 {
+		t.Fatalf("writes=%d combined writes=%d split flushes=%d, want 2/1/0", len(sink.writes), sink.combinedWrites, sink.flushes)
+	}
+}
+
 func TestRequestDecoderWithChunkedBody(t *testing.T) {
 	decoder, err := NewRequestDecoder(1024, 1024)
 	if err != nil {
@@ -438,6 +488,22 @@ func TestChunkedBodyEncoderWritesStreamingChunks(t *testing.T) {
 	}
 }
 
+func TestChunkedBodyEncoderWriteAndFlushUsesCombinedFinalBuffer(t *testing.T) {
+	sink := &outboundSink{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	if err := ch.Pipeline().AddLast("encoder", NewChunkedBodyEncoder()); err != nil {
+		t.Fatal(err)
+	}
+	defer sink.release()
+
+	if err := ch.WriteAndFlush(Chunk{Data: testBuf([]byte("ab"))}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sink.writes) != 3 || sink.combinedWrites != 1 || sink.flushes != 0 {
+		t.Fatalf("writes=%d combined writes=%d split flushes=%d, want 3/1/0", len(sink.writes), sink.combinedWrites, sink.flushes)
+	}
+}
+
 func TestContinueHandlerWritesInterimResponseAndPropagatesRequest(t *testing.T) {
 	sink := &outboundSink{}
 	collector := &requestCollector{}
@@ -480,7 +546,11 @@ func TestContinueHandlerPropagatesPooledRequest(t *testing.T) {
 	}
 }
 
-type outboundSink struct{ writes []buffer.ByteBuf }
+type outboundSink struct {
+	writes         []buffer.ByteBuf
+	flushes        int
+	combinedWrites int
+}
 
 func (s *outboundSink) Write(msg any) error {
 	if buf, ok := msg.(buffer.ByteBuf); ok {
@@ -488,7 +558,14 @@ func (s *outboundSink) Write(msg any) error {
 	}
 	return nil
 }
-func (s *outboundSink) Flush() error { return nil }
+func (s *outboundSink) Flush() error {
+	s.flushes++
+	return nil
+}
+func (s *outboundSink) WriteAndFlush(msg any) error {
+	s.combinedWrites++
+	return s.Write(msg)
+}
 func (s *outboundSink) Close() error { return nil }
 func (s *outboundSink) release() {
 	for _, buf := range s.writes {

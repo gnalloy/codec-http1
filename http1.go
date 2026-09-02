@@ -403,6 +403,14 @@ func NewRequestEncoder() *RequestEncoder {
 }
 
 func (e *RequestEncoder) Write(ctx *channel.HandlerContext, msg any) error {
+	return e.write(ctx, msg, false)
+}
+
+func (e *RequestEncoder) WriteAndFlush(ctx *channel.HandlerContext, msg any) error {
+	return e.write(ctx, msg, true)
+}
+
+func (e *RequestEncoder) write(ctx *channel.HandlerContext, msg any, flush bool) error {
 	var req Request
 	var pooled *Request
 	switch value := msg.(type) {
@@ -410,14 +418,14 @@ func (e *RequestEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 		req = value
 	case *Request:
 		if value == nil {
-			return ctx.Write(msg)
+			return writeOutboundMessage(ctx, msg, flush)
 		}
 		req = *value
 		if value.pooled {
 			pooled = value
 		}
 	default:
-		return ctx.Write(msg)
+		return writeOutboundMessage(ctx, msg, flush)
 	}
 	if pooled != nil {
 		defer releaseDecodedRequestEnvelope(pooled)
@@ -430,23 +438,21 @@ func (e *RequestEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 		}
 		return err
 	}
+	if req.Body == nil {
+		return writeHTTP1Buffer(ctx, out, flush)
+	}
 	if err := ctx.Write(out); err != nil {
 		out.Release()
-		if req.Body != nil {
-			req.Body.Release()
-		}
+		req.Body.Release()
 		return err
 	}
-	if req.Body != nil {
-		if chunked {
-			if err := writeChunkedData(ctx, req.Body); err != nil {
-				return err
-			}
-			return writeLastChunk(ctx, nil)
+	if chunked {
+		if err := writeChunkedData(ctx, req.Body, false); err != nil {
+			return err
 		}
-		return codec.WriteOutboundBuffer(ctx, req.Body)
+		return writeLastChunk(ctx, nil, flush)
 	}
-	return nil
+	return writeHTTP1Buffer(ctx, req.Body, flush)
 }
 
 // ResponseEncoderOptions 描述 HTTP/1 响应编码器的可选热路径策略。
@@ -474,6 +480,14 @@ func NewResponseEncoderWithOptions(options ResponseEncoderOptions) *ResponseEnco
 }
 
 func (e *ResponseEncoder) Write(ctx *channel.HandlerContext, msg any) error {
+	return e.write(ctx, msg, false)
+}
+
+func (e *ResponseEncoder) WriteAndFlush(ctx *channel.HandlerContext, msg any) error {
+	return e.write(ctx, msg, true)
+}
+
+func (e *ResponseEncoder) write(ctx *channel.HandlerContext, msg any, flush bool) error {
 	var resp Response
 	var pooled *Response
 	switch value := msg.(type) {
@@ -481,29 +495,29 @@ func (e *ResponseEncoder) Write(ctx *channel.HandlerContext, msg any) error {
 		resp = value
 	case *Response:
 		if value == nil {
-			return ctx.Write(msg)
+			return writeOutboundMessage(ctx, msg, flush)
 		}
 		resp = *value
 		if value.pooled {
 			pooled = value
 		}
 	default:
-		return ctx.Write(msg)
+		return writeOutboundMessage(ctx, msg, flush)
 	}
 	if pooled != nil {
 		defer releaseDecodedResponseEnvelope(pooled)
 	}
 	chunked := responseChunked(resp)
 	if resp.Body != nil && !chunked && e.options.CoalesceBodyBytes > 0 {
-		return e.writeCoalesced(ctx, resp)
+		return e.writeCoalesced(ctx, resp, flush)
 	}
-	return e.writeSplit(ctx, resp, chunked)
+	return e.writeSplit(ctx, resp, chunked, flush)
 }
 
-func (e *ResponseEncoder) writeCoalesced(ctx *channel.HandlerContext, resp Response) error {
+func (e *ResponseEncoder) writeCoalesced(ctx *channel.HandlerContext, resp Response, flush bool) error {
 	bodyBytes := resp.Body.ReadableBytes()
 	if bodyBytes == 0 || bodyBytes > e.options.CoalesceBodyBytes {
-		return e.writeSplit(ctx, resp, false)
+		return e.writeSplit(ctx, resp, false, flush)
 	}
 	out, err := encodeResponse(ctx, resp, bodyBytes)
 	if err != nil {
@@ -511,10 +525,10 @@ func (e *ResponseEncoder) writeCoalesced(ctx *channel.HandlerContext, resp Respo
 		return err
 	}
 	resp.Body.Release()
-	return codec.WriteOutboundBuffer(ctx, out)
+	return writeHTTP1Buffer(ctx, out, flush)
 }
 
-func (e *ResponseEncoder) writeSplit(ctx *channel.HandlerContext, resp Response, chunked bool) error {
+func (e *ResponseEncoder) writeSplit(ctx *channel.HandlerContext, resp Response, chunked bool, flush bool) error {
 	out, err := encodeResponseHead(ctx, resp, chunked)
 	if err != nil {
 		if resp.Body != nil {
@@ -522,23 +536,21 @@ func (e *ResponseEncoder) writeSplit(ctx *channel.HandlerContext, resp Response,
 		}
 		return err
 	}
+	if resp.Body == nil {
+		return writeHTTP1Buffer(ctx, out, flush)
+	}
 	if err := ctx.Write(out); err != nil {
 		out.Release()
-		if resp.Body != nil {
-			resp.Body.Release()
-		}
+		resp.Body.Release()
 		return err
 	}
-	if resp.Body != nil {
-		if chunked {
-			if err := writeChunkedData(ctx, resp.Body); err != nil {
-				return err
-			}
-			return writeLastChunk(ctx, nil)
+	if chunked {
+		if err := writeChunkedData(ctx, resp.Body, false); err != nil {
+			return err
 		}
-		return codec.WriteOutboundBuffer(ctx, resp.Body)
+		return writeLastChunk(ctx, nil, flush)
 	}
-	return nil
+	return writeHTTP1Buffer(ctx, resp.Body, flush)
 }
 
 type ContinueHandler struct{}
@@ -584,23 +596,37 @@ func NewChunkedBodyEncoder() *ChunkedBodyEncoder {
 }
 
 func (e *ChunkedBodyEncoder) Write(ctx *channel.HandlerContext, msg any) error {
+	return e.write(ctx, msg, false)
+}
+
+func (e *ChunkedBodyEncoder) WriteAndFlush(ctx *channel.HandlerContext, msg any) error {
+	return e.write(ctx, msg, true)
+}
+
+func (e *ChunkedBodyEncoder) write(ctx *channel.HandlerContext, msg any, flush bool) error {
 	chunk, ok := msg.(Chunk)
 	if !ok {
-		return ctx.Write(msg)
+		return writeOutboundMessage(ctx, msg, flush)
 	}
 	if chunk.Data != nil {
-		if err := writeChunkedData(ctx, chunk.Data); err != nil {
+		if err := writeChunkedData(ctx, chunk.Data, flush && !chunk.Last); err != nil {
 			return err
 		}
 		chunk.Data = nil
+		if !chunk.Last {
+			return nil
+		}
 	}
 	if chunk.Last {
-		return writeLastChunk(ctx, chunk.Trailers)
+		return writeLastChunk(ctx, chunk.Trailers, flush)
+	}
+	if flush {
+		return ctx.Flush()
 	}
 	return nil
 }
 
-func writeChunkedData(ctx *channel.HandlerContext, body buffer.ByteBuf) error {
+func writeChunkedData(ctx *channel.HandlerContext, body buffer.ByteBuf, flush bool) error {
 	prefix := strconv.FormatInt(int64(body.ReadableBytes()), 16) + "\r\n"
 	head, err := ctx.Channel().Allocator().Acquire(len(prefix))
 	if err != nil {
@@ -635,10 +661,10 @@ func writeChunkedData(ctx *channel.HandlerContext, body buffer.ByteBuf) error {
 		tail.Release()
 		return err
 	}
-	return codec.WriteOutboundBuffer(ctx, tail)
+	return writeHTTP1Buffer(ctx, tail, flush)
 }
 
-func writeLastChunk(ctx *channel.HandlerContext, trailers Headers) error {
+func writeLastChunk(ctx *channel.HandlerContext, trailers Headers, flush bool) error {
 	var builder strings.Builder
 	builder.WriteString("0\r\n")
 	for k, v := range trailers {
@@ -656,6 +682,20 @@ func writeLastChunk(ctx *channel.HandlerContext, trailers Headers) error {
 	if _, err := out.WriteBytes([]byte(data)); err != nil {
 		out.Release()
 		return err
+	}
+	return writeHTTP1Buffer(ctx, out, flush)
+}
+
+func writeOutboundMessage(ctx *channel.HandlerContext, msg any, flush bool) error {
+	if flush {
+		return ctx.WriteAndFlush(msg)
+	}
+	return ctx.Write(msg)
+}
+
+func writeHTTP1Buffer(ctx *channel.HandlerContext, out buffer.ByteBuf, flush bool) error {
+	if flush {
+		return codec.WriteOutboundBufferAndFlush(ctx, out)
 	}
 	return codec.WriteOutboundBuffer(ctx, out)
 }
