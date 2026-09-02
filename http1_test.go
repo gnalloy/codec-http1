@@ -23,12 +23,16 @@ func (c *requestCollector) ChannelRead(_ *channel.HandlerContext, msg any) {
 }
 
 type responseCollector struct {
-	resps []Response
+	resps []*Response
 }
 
 func (c *responseCollector) ChannelRead(_ *channel.HandlerContext, msg any) {
-	if resp, ok := msg.(Response); ok {
+	switch resp := msg.(type) {
+	case *Response:
 		c.resps = append(c.resps, resp)
+	case Response:
+		copy := resp
+		c.resps = append(c.resps, &copy)
 	}
 }
 

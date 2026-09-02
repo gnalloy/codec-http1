@@ -37,11 +37,17 @@ func (h *ContentCompressor) ChannelInactive(ctx *channel.HandlerContext) {
 }
 
 func (h *ContentCompressor) Write(ctx *channel.HandlerContext, msg any) error {
-	resp, ok := msg.(Response)
-	if !ok {
+	var resp *Response
+	switch value := msg.(type) {
+	case Response:
+		resp = &value
+	case *Response:
+		resp = value
+	}
+	if resp == nil {
 		return ctx.Write(msg)
 	}
-	if !canCompressResponse(resp, h.accepted, h.minBytes) {
+	if !canCompressResponse(*resp, h.accepted, h.minBytes) {
 		return ctx.Write(msg)
 	}
 	body, err := encodeContent(ctx, resp.Body, h.accepted)
@@ -55,7 +61,10 @@ func (h *ContentCompressor) Write(ctx *channel.HandlerContext, msg any) error {
 	resp.Headers.Del("Content-Encoding")
 	resp.Headers.Set("Content-Encoding", string(h.accepted))
 	resp.Headers = setHeaderToken(resp.Headers, "Vary", "Accept-Encoding")
-	return ctx.Write(resp)
+	if _, ok := msg.(*Response); ok {
+		return ctx.Write(resp)
+	}
+	return ctx.Write(*resp)
 }
 
 func canCompressResponse(resp Response, coding ContentCoding, minBytes int) bool {

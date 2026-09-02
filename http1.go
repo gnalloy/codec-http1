@@ -105,6 +105,7 @@ type Response struct {
 	Body       buffer.ByteBuf
 
 	recycleHeaders bool
+	pooled         bool
 }
 
 func (r Response) KeepAlive() bool {
@@ -117,9 +118,17 @@ func (r Response) KeepAlive() bool {
 	return true
 }
 
-func (r Response) Release() {
+// Release 释放正文、回收解码头和池化响应对象。
+func (r *Response) Release() {
+	if r == nil {
+		return
+	}
 	if r.Body != nil {
 		r.Body.Release()
+	}
+	if r.pooled {
+		releaseDecodedResponseEnvelope(r)
+		return
 	}
 	if r.recycleHeaders {
 		releaseDecodedHeaders(r.Headers)
@@ -241,11 +250,12 @@ func (d *ResponseDecoder) Decode(ctx *channel.HandlerContext, in *buffer.Composi
 		return nil, err
 	}
 	headers := acquireDecodedHeaders()
-	resp, err := parseResponseHeaderInto(header, headers)
+	parsed, err := parseResponseHeaderInto(header, headers)
 	if err != nil {
 		releaseDecodedHeaders(headers)
 		return nil, err
 	}
+	resp := acquireDecodedResponse(parsed)
 	resp.recycleHeaders = true
 	bodyLength := contentLength(resp.Headers)
 	if resp.Headers.ContainsToken("Transfer-Encoding", "chunked") {
@@ -454,9 +464,24 @@ func NewResponseEncoderWithOptions(options ResponseEncoderOptions) *ResponseEnco
 }
 
 func (e *ResponseEncoder) Write(ctx *channel.HandlerContext, msg any) error {
-	resp, ok := msg.(Response)
-	if !ok {
+	var resp Response
+	var pooled *Response
+	switch value := msg.(type) {
+	case Response:
+		resp = value
+	case *Response:
+		if value == nil {
+			return ctx.Write(msg)
+		}
+		resp = *value
+		if value.pooled {
+			pooled = value
+		}
+	default:
 		return ctx.Write(msg)
+	}
+	if pooled != nil {
+		defer releaseDecodedResponseEnvelope(pooled)
 	}
 	chunked := responseChunked(resp)
 	if resp.Body != nil && !chunked && e.options.CoalesceBodyBytes > 0 {
