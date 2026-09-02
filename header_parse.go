@@ -50,17 +50,24 @@ func parseTrailerHeaders(src string) (Headers, error) {
 }
 
 func contentLength(headers Headers) int {
-	for k, v := range headers {
-		if !strings.EqualFold(k, "Content-Length") {
-			continue
+	value, ok := headers["Content-Length"]
+	if !ok {
+		for key, candidate := range headers {
+			if strings.EqualFold(key, "Content-Length") {
+				value = candidate
+				ok = true
+				break
+			}
 		}
-		n, err := strconv.Atoi(strings.TrimSpace(v))
-		if err != nil {
-			return -1
+		if !ok {
+			return 0
 		}
-		return n
 	}
-	return 0
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return -1
+	}
+	return n
 }
 
 func splitRequestLine(line string) (string, string, string, bool) {

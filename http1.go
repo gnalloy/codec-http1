@@ -30,6 +30,10 @@ func (h Headers) Set(name string, value string) {
 }
 
 func (h Headers) Del(name string) {
+	if _, ok := h[name]; ok {
+		delete(h, name)
+		return
+	}
 	for k := range h {
 		if strings.EqualFold(k, name) {
 			delete(h, k)
