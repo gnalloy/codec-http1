@@ -513,7 +513,7 @@ func TestContinueHandlerWritesInterimResponseAndPropagatesRequest(t *testing.T) 
 	_ = ch.Pipeline().AddLast("collector", collector)
 	defer sink.release()
 
-	req := Request{Method: "POST", URI: "/upload", Version: "HTTP/1.1", Headers: Headers{"Expect": "100-continue"}}
+	req := Request{Method: "POST", URI: "/upload", Version: "HTTP/1.1", Headers: Headers{"Content-Length": "4", "Expect": "100-continue"}}
 	ch.Pipeline().FireChannelRead(req)
 	if len(collector.reqs) != 1 {
 		t.Fatalf("reqs=%d, want 1", len(collector.reqs))
@@ -526,6 +526,28 @@ func TestContinueHandlerWritesInterimResponseAndPropagatesRequest(t *testing.T) 
 	}
 }
 
+func TestContinueHandlerIgnoresBodylessRequest(t *testing.T) {
+	sink := &outboundSink{}
+	collector := &requestCollector{}
+	ch := channel.NewLocalChannel(1, buffer.NewHeapAllocator(), sink)
+	_ = ch.Pipeline().AddLast("encoder", NewResponseEncoder())
+	_ = ch.Pipeline().AddLast("continue", NewContinueHandler())
+	_ = ch.Pipeline().AddLast("collector", collector)
+	defer sink.release()
+
+	req, err := parseRequestHeader("GET / HTTP/1.1\r\nHost: example.test\r\nExpect: 100-continue\r\n\r\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch.Pipeline().FireChannelRead(req)
+	if len(collector.reqs) != 1 {
+		t.Fatalf("requests=%d, want 1", len(collector.reqs))
+	}
+	if len(sink.writes) != 0 {
+		t.Fatalf("writes=%d, want 0", len(sink.writes))
+	}
+}
+
 func TestContinueHandlerPropagatesPooledRequest(t *testing.T) {
 	sink := &outboundSink{}
 	collector := &requestCollector{}
@@ -535,7 +557,7 @@ func TestContinueHandlerPropagatesPooledRequest(t *testing.T) {
 	_ = ch.Pipeline().AddLast("collector", collector)
 	defer sink.release()
 
-	req := acquireDecodedRequest(Request{Method: "POST", URI: "/upload", Version: "HTTP/1.1", Headers: Headers{"Expect": "100-continue"}})
+	req := acquireDecodedRequest(Request{Method: "POST", URI: "/upload", Version: "HTTP/1.1", Headers: Headers{"Content-Length": "4", "Expect": "100-continue"}})
 	ch.Pipeline().FireChannelRead(req)
 	if len(collector.reqs) != 1 || collector.reqs[0] != req {
 		t.Fatalf("requests=%d propagated=%v, want pooled request", len(collector.reqs), len(collector.reqs) == 1 && collector.reqs[0] == req)

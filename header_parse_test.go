@@ -18,6 +18,69 @@ func TestParseRequestHeaderWithFramingInto(t *testing.T) {
 	}
 }
 
+func TestParsedRequestContentExpectation(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{
+			name: "bodyless",
+			raw:  "GET / HTTP/1.1\r\nHost: example.test\r\nExpect: 100-continue\r\n\r\n",
+			want: false,
+		},
+		{
+			name: "fixed content",
+			raw:  "POST / HTTP/1.1\r\nContent-Length: 4\r\nExpect: 100-continue\r\n\r\n",
+			want: true,
+		},
+		{
+			name: "chunked content",
+			raw:  "POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nExpect: 100-continue\r\n\r\n",
+			want: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req, err := parseRequestHeader(test.raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := req.expectsContent(); got != test.want {
+				t.Fatalf("expectsContent=%t, want %t", got, test.want)
+			}
+			if !req.ExpectsContinue() {
+				t.Fatal("parsed Expect header was not preserved")
+			}
+		})
+	}
+}
+
+func BenchmarkParsedBodylessRequestContinueCheck(b *testing.B) {
+	req, err := parseRequestHeader("GET / HTTP/1.1\r\nHost: example.test\r\n\r\n")
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		if req.expectsContent() && req.ExpectsContinue() {
+			b.Fatal("bodyless request unexpectedly requires continue")
+		}
+	}
+}
+
+func BenchmarkBodylessRequestExpectHeaderScan(b *testing.B) {
+	headers := Headers{"Host": "example.test"}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		if headers.ContainsToken("Expect", "100-continue") {
+			b.Fatal("bodyless request unexpectedly requires continue")
+		}
+	}
+}
+
 func TestContentLengthSupportsCanonicalAndCaseInsensitiveNames(t *testing.T) {
 	tests := []struct {
 		name    string

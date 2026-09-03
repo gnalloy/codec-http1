@@ -30,7 +30,14 @@ func parseRequestHeaderWithFramingInto(src string, headers Headers) (Request, me
 	if err != nil {
 		return Request{}, messageFraming{}, err
 	}
-	return Request{Method: method, URI: uri, Version: version, Headers: headers}, framing, nil
+	return Request{
+		Method:          method,
+		URI:             uri,
+		Version:         version,
+		Headers:         headers,
+		framingKnown:    true,
+		contentExpected: framing.chunked || framing.contentLength > 0,
+	}, framing, nil
 }
 
 // parseResponseHeader 解析完整 HTTP/1 响应头，不为行列表创建临时切片。

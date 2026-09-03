@@ -66,9 +66,11 @@ type Request struct {
 	Headers Headers
 	Body    buffer.ByteBuf
 
-	headerOwner    buffer.ByteBuf
-	recycleHeaders bool
-	pooled         bool
+	headerOwner     buffer.ByteBuf
+	recycleHeaders  bool
+	pooled          bool
+	framingKnown    bool
+	contentExpected bool
 }
 
 func (r Request) KeepAlive() bool {
@@ -83,6 +85,16 @@ func (r Request) KeepAlive() bool {
 
 func (r Request) ExpectsContinue() bool {
 	return r.Headers.ContainsToken("Expect", "100-continue")
+}
+
+func (r Request) expectsContent() bool {
+	if r.framingKnown {
+		return r.contentExpected
+	}
+	if r.Body != nil && r.Body.ReadableBytes() > 0 {
+		return true
+	}
+	return contentLength(r.Headers) > 0 || r.Headers.ContainsToken("Transfer-Encoding", "chunked")
 }
 
 // Release 释放正文、回收解码头和池化请求对象。
@@ -565,7 +577,7 @@ func (h *ContinueHandler) ChannelRead(ctx *channel.HandlerContext, msg any) {
 	case *Request:
 		req = value
 	}
-	if req != nil && req.ExpectsContinue() {
+	if req != nil && req.expectsContent() && req.ExpectsContinue() {
 		if err := ctx.Channel().WriteAndFlush(Response{StatusCode: 100}); err != nil {
 			req.Release()
 			ctx.FireExceptionCaught(err)
