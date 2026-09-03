@@ -195,6 +195,22 @@ func BenchmarkResponseEncoderCoalescedBody(b *testing.B) {
 	}
 }
 
+func BenchmarkScanResponseHeaderFields(b *testing.B) {
+	headers := Headers{
+		"Content-Type": "application/octet-stream",
+		"Server":       "gnalloy",
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		metadata := scanHeaderFields(headers)
+		if metadata.size == 0 || metadata.hasContentLength || metadata.chunked {
+			b.Fatal("unexpected header metadata")
+		}
+	}
+}
+
 func fragmentedHTTP1Buffer(parts ...string) *buffer.CompositeByteBuf {
 	c := buffer.NewCompositeByteBuf()
 	for _, part := range parts {

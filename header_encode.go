@@ -10,15 +10,13 @@ import (
 
 const contentLengthHeader = "Content-Length: "
 
-func requestChunked(req Request) bool {
-	return req.Headers.ContainsToken("Transfer-Encoding", "chunked")
+type headerFieldsMetadata struct {
+	size             int
+	hasContentLength bool
+	chunked          bool
 }
 
-func responseChunked(resp Response) bool {
-	return resp.Headers.ContainsToken("Transfer-Encoding", "chunked")
-}
-
-func encodeRequestHead(ctx *channel.HandlerContext, req Request, chunked bool) (buffer.ByteBuf, error) {
+func encodeRequestHead(ctx *channel.HandlerContext, req Request, metadata headerFieldsMetadata) (buffer.ByteBuf, error) {
 	method := req.Method
 	if method == "" {
 		method = "GET"
@@ -31,12 +29,11 @@ func encodeRequestHead(ctx *channel.HandlerContext, req Request, chunked bool) (
 	if version == "" {
 		version = "HTTP/1.1"
 	}
-	headerBytes, hasContentLength := headerFieldsMeta(req.Headers, "Content-Length")
 	contentLength := -1
-	if req.Body != nil && !chunked && !hasContentLength {
+	if req.Body != nil && !metadata.chunked && !metadata.hasContentLength {
 		contentLength = req.Body.ReadableBytes()
 	}
-	size := requestHeadSize(method, uri, version, headerBytes, contentLength)
+	size := requestHeadSize(method, uri, version, metadata.size, contentLength)
 	out, err := ctx.Channel().Allocator().Acquire(size)
 	if err != nil {
 		return nil, err
@@ -48,8 +45,8 @@ func encodeRequestHead(ctx *channel.HandlerContext, req Request, chunked bool) (
 	return out, nil
 }
 
-func encodeResponseHead(ctx *channel.HandlerContext, resp Response, chunked bool) (buffer.ByteBuf, error) {
-	version, reason, contentLength, size := responseHeadFields(resp, chunked)
+func encodeResponseHead(ctx *channel.HandlerContext, resp Response, metadata headerFieldsMetadata) (buffer.ByteBuf, error) {
+	version, reason, contentLength, size := responseHeadFields(resp, metadata)
 	out, err := ctx.Channel().Allocator().Acquire(size)
 	if err != nil {
 		return nil, err
@@ -61,8 +58,8 @@ func encodeResponseHead(ctx *channel.HandlerContext, resp Response, chunked bool
 	return out, nil
 }
 
-func encodeResponse(ctx *channel.HandlerContext, resp Response, bodyBytes int) (buffer.ByteBuf, error) {
-	version, reason, contentLength, size := responseHeadFields(resp, false)
+func encodeResponse(ctx *channel.HandlerContext, resp Response, bodyBytes int, metadata headerFieldsMetadata) (buffer.ByteBuf, error) {
+	version, reason, contentLength, size := responseHeadFields(resp, metadata)
 	out, err := ctx.Channel().Allocator().Acquire(size + bodyBytes)
 	if err != nil {
 		return nil, err
@@ -78,7 +75,7 @@ func encodeResponse(ctx *channel.HandlerContext, resp Response, bodyBytes int) (
 	return out, nil
 }
 
-func responseHeadFields(resp Response, chunked bool) (string, string, int, int) {
+func responseHeadFields(resp Response, metadata headerFieldsMetadata) (string, string, int, int) {
 	version := resp.Version
 	if version == "" {
 		version = "HTTP/1.1"
@@ -87,12 +84,11 @@ func responseHeadFields(resp Response, chunked bool) (string, string, int, int) 
 	if reason == "" {
 		reason = defaultReason(resp.StatusCode)
 	}
-	headerBytes, hasContentLength := headerFieldsMeta(resp.Headers, "Content-Length")
 	contentLength := -1
-	if resp.Body != nil && !chunked && !hasContentLength {
+	if resp.Body != nil && !metadata.chunked && !metadata.hasContentLength {
 		contentLength = resp.Body.ReadableBytes()
 	}
-	size := responseHeadSize(version, resp.StatusCode, reason, headerBytes, contentLength)
+	size := responseHeadSize(version, resp.StatusCode, reason, metadata.size, contentLength)
 	return version, reason, contentLength, size
 }
 
@@ -142,16 +138,18 @@ func responseHeadSize(version string, statusCode int, reason string, headerBytes
 		headerBytes + contentLengthSize(contentLength) + 2
 }
 
-func headerFieldsMeta(headers Headers, name string) (int, bool) {
-	size := 0
-	found := false
+func scanHeaderFields(headers Headers) headerFieldsMetadata {
+	var metadata headerFieldsMetadata
 	for k, v := range headers {
-		size += len(k) + 2 + len(v) + 2
-		if !found && strings.EqualFold(k, name) {
-			found = true
+		metadata.size += len(k) + 2 + len(v) + 2
+		if !metadata.hasContentLength && strings.EqualFold(k, "Content-Length") {
+			metadata.hasContentLength = true
+		}
+		if !metadata.chunked && strings.EqualFold(k, "Transfer-Encoding") {
+			metadata.chunked = containsHeaderToken(v, "chunked")
 		}
 	}
-	return size, found
+	return metadata
 }
 
 func contentLengthSize(contentLength int) int {

@@ -442,8 +442,8 @@ func (e *RequestEncoder) write(ctx *channel.HandlerContext, msg any, flush bool)
 	if pooled != nil {
 		defer releaseDecodedRequestEnvelope(pooled)
 	}
-	chunked := requestChunked(req)
-	out, err := encodeRequestHead(ctx, req, chunked)
+	metadata := scanHeaderFields(req.Headers)
+	out, err := encodeRequestHead(ctx, req, metadata)
 	if err != nil {
 		if req.Body != nil {
 			req.Body.Release()
@@ -457,7 +457,7 @@ func (e *RequestEncoder) write(ctx *channel.HandlerContext, msg any, flush bool)
 		req.Body.Release()
 		return err
 	}
-	if chunked {
+	if metadata.chunked {
 		if err := writeChunkedData(ctx, req.Body, false); err != nil {
 			return err
 		}
@@ -518,19 +518,19 @@ func (e *ResponseEncoder) write(ctx *channel.HandlerContext, msg any, flush bool
 	if pooled != nil {
 		defer releaseDecodedResponseEnvelope(pooled)
 	}
-	chunked := responseChunked(resp)
-	if resp.Body != nil && !chunked && e.options.CoalesceBodyBytes > 0 {
-		return e.writeCoalesced(ctx, resp, flush)
+	metadata := scanHeaderFields(resp.Headers)
+	if resp.Body != nil && !metadata.chunked && e.options.CoalesceBodyBytes > 0 {
+		return e.writeCoalesced(ctx, resp, metadata, flush)
 	}
-	return e.writeSplit(ctx, resp, chunked, flush)
+	return e.writeSplit(ctx, resp, metadata, flush)
 }
 
-func (e *ResponseEncoder) writeCoalesced(ctx *channel.HandlerContext, resp Response, flush bool) error {
+func (e *ResponseEncoder) writeCoalesced(ctx *channel.HandlerContext, resp Response, metadata headerFieldsMetadata, flush bool) error {
 	bodyBytes := resp.Body.ReadableBytes()
 	if bodyBytes == 0 || bodyBytes > e.options.CoalesceBodyBytes {
-		return e.writeSplit(ctx, resp, false, flush)
+		return e.writeSplit(ctx, resp, metadata, flush)
 	}
-	out, err := encodeResponse(ctx, resp, bodyBytes)
+	out, err := encodeResponse(ctx, resp, bodyBytes, metadata)
 	if err != nil {
 		resp.Body.Release()
 		return err
@@ -539,8 +539,8 @@ func (e *ResponseEncoder) writeCoalesced(ctx *channel.HandlerContext, resp Respo
 	return writeHTTP1Buffer(ctx, out, flush)
 }
 
-func (e *ResponseEncoder) writeSplit(ctx *channel.HandlerContext, resp Response, chunked bool, flush bool) error {
-	out, err := encodeResponseHead(ctx, resp, chunked)
+func (e *ResponseEncoder) writeSplit(ctx *channel.HandlerContext, resp Response, metadata headerFieldsMetadata, flush bool) error {
+	out, err := encodeResponseHead(ctx, resp, metadata)
 	if err != nil {
 		if resp.Body != nil {
 			resp.Body.Release()
@@ -554,7 +554,7 @@ func (e *ResponseEncoder) writeSplit(ctx *channel.HandlerContext, resp Response,
 		resp.Body.Release()
 		return err
 	}
-	if chunked {
+	if metadata.chunked {
 		if err := writeChunkedData(ctx, resp.Body, false); err != nil {
 			return err
 		}
